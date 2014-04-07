@@ -1,0 +1,829 @@
+This directory contains the 4.5 release of `OpenSAF'.
+
+`OpenSAF' is an open source project designed to implement a complete highly
+available operating environment based on Service Availability Forum (SA Forum)
+standards. The objective of the `OpenSAF' project is to accelerate broad adoption
+of a SA Forum compliant operating environment. OpenSAF also offers
+complementary services which are required in a complete high-availability
+system solution.
+
+`OpenSAF' has been originally contributed by Motorola ECC, by open sourcing
+its HA middleware suite Netplane Core Services (NCS).
+
+`OpenSAF' has a web site at http://opensaf.sourceforge.net/
+
+See file `COPYING.LIB' for copying conditions.
+See file `INSTALL' for compilation and installation instructions.
+See file `NEWS' for a list of major changes in the current release.
+See file `ChangeLog' for a list of detailed changes.
+See file `AUTHORS' for the names of maintainers.
+See file `THANKS' for a list of contributors.
+
+Please check the `Linux' distribution-specific notes below for any caveats
+related to your operating system.
+
+
+`OpenSAF' Architecture Overview
+===============================
+
+`OpenSAF' software is distributed in nature. There is a Controller node, which is
+the central entity in the cluster which will control all the other Payload nodes
+in the HA cluster. In the HA cluster there are two System Controllers running in
+Active/Standby mode.
+
+The `OpenSAF' software is divided in to following classes of Modules:
+
+    * Directors:
+      The Service directors run on the Controller node. They interact with
+      Node Directors running on the Payload nodes and provide service specific
+      functionality.
+
+    * Node Directors:
+      Node directors distribute the service responsibilities with directors.
+      Node directors interact with Agents to provide service functionality to
+      the user applications. Node directors run both on System Controller node
+      and Payload nodes.
+
+    * Servers:
+      Servers run on the System Controller and they talk to Agents to provide
+      service functionality to the users. If the service is having servers then
+      it doesn't have directors, node director pieces. If the service doesn't
+      have node local functionality then "Server - Agent" architectural approach
+      is used.
+
+    * Agents: Agents are the service libraries which are linked with user
+      applications and provide service to the user applications by interacting
+      with other service parts.
+
+User applications can run on either System Controller node or Payload node. But
+it is advisable to run the user applications on the Payload nodes, so your
+applications are not impacted when System Controller failover happens due to
+any failures in `OpenSAF' Modules.
+
+The OpenSAF infrastructure is made highly available by modeling the individual
+services as AMF components. All the Node Directors use no redundancy model and
+are restart capable with component capability 1_ACTIVE. All the Directors and
+Servers use 2N redundancy model with "1_ACTIVE_OR_1_STANDBY".
+
+By default (in 4.2) OpenSAF processes will run as the UNIX system user "opensaf"
+which is a member of the "opensaf" UNIX group. Only two processes are running
+as root, amfnd and smfnd. Reason is that amfnd need todo that for backwards 
+compatible reasons and the programs it starts might be designed to require root
+access. The reason for smfnd for running as root is that it typically installs
+rpms which requires root access. The rpms built by opensaf will create these users
+using rpm scriptlets.
+
+When using a "make install" system, either manually do the same as the rpm post
+install scriptlet (create group and user, configure sudo etc) or configure
+opensaf to run as root.
+
+See the build section how to revert to old all root behaviour.
+
+
+Downloading
+===========
+
+`OpenSAF' release archives can be obtained from here:
+
+    http://sourceforge.net/projects/opensaf/files/releases/
+
+
+Documentation
+=============
+
+`OpenSAF' implements various `SAF AIS' services. The Service Availability
+Forum Specifications can be downloaded from here:
+
+    http://www.saforum.org/specification/download/
+
+The `OpenSAF' Programmer's Reference Manuals can be obtained from here:
+
+    http://sourceforge.net/projects/opensaf/files/docs/
+
+    * OpenSAF Overview
+    * OpenSAF Availability Service
+    * OpenSAF Cluster Membership Service
+    * OpenSAF Checkpoint Service
+    * OpenSAF Event Distribution Service
+    * OpenSAF Global Lock Service
+    * OpenSAF Information Model Management Service
+    * OpenSAF LOG Service
+    * OpenSAF Message Queue Service
+    * OpenSAF Notification Service
+    * OpenSAF Platform Management Service
+    * OpenSAF Software Management Framework Service
+
+Development
+===========
+
+`OpenSAF' development is hosted by SourceForge, the main project portal can
+be found here:
+
+  http://sourceforge.net/projects/opensaf/
+
+You can find most information concerning the development of `OpenSAF' at
+this site.
+
+`OpenSAF' is using `Mercurial' (hg) as its Source Control Management system
+tool. `Mercurial' is a fast, lightweight Source Control Management system
+designed for efficient handling of very large distributed projects and can be
+obtained from here:
+
+    http://mercurial.selenic.com/
+
+
+Building from `Mercurial'
+=========================
+
+If you don't want to use one of the `OpenSAF' release archive, you can get a
+clone and bootstrap it by doing the following steps:
+
+    % hg clone http://hg.code.sf.net/p/opensaf/staging opensaf-staging
+    % cd opensaf-staging
+    % ./bootstrap.sh
+
+After bootstraping follow the standard build instructions.
+
+
+Bug Reporting
+=============
+
+You can send `OpenSAF' bug reports to <opensaf-devel@lists.sourceforge.net>.
+You can subscribe to the development mailing list from here:
+
+    https://lists.sourceforge.net/lists/listinfo/opensaf-devel
+
+If you need help using `OpenSAF', try <opensaf-users@lists.sourceforge.net>
+instead. You can subscribe to the user mailing list from here:
+
+    https://lists.sourceforge.net/lists/listinfo/opensaf-users
+
+You can also use the online bug tracking system in the `OpenSAF' project to
+submit new problem reports or search for existing ones:
+
+    http://sourceforge.net/p/opensaf/tickets/
+
+When reporting bug, make sure you provide various useful informations about
+your Linux environment:
+
+    * Distribution used (e.g. Fedora, Ubuntu, SUSE, PNE-LE etc.)
+    * The revision of your Linux distribution
+    * Package revisions of the prerequisites (e.g. net-snmp, tipc etc.)
+    * If using the package prerequisites from the Linux distribution?
+    * Build tool revisions (e.g. gcc, automake, autoconf, libtool)
+    * If using cross-compiling + target information
+
+
+Source Tree Structure
+=====================
+
+   |+-contrib/
+   |  | +-plmc/		(The PLM coordinator implementation)
+   +-java/		(Java AIS API mapping Implementation for AMF,CLM)
+   |  |+-ais_api/
+   |  |+-ais_api_impl/
+   |  |+-ais_api_impl_native/
+   |  |+-ais_api_test/ 
+   +-m4/		(Extra M4 macros for the build)
+   +-osaf/	(OpenSAF Sources)
+   |  +-libs/   (Sources of OpenSAF Libraries) 
+   |  |    |+-agents/ (sources for OpenSAF agents)
+   |  |	   |	|+-infrastructure/ (Agents of Infrastructure services)
+   |  |	   |	|	|+-rda/
+   |  |	   |	|+-saf/ (Agents of SAF services)
+   |  |	   | 		|+-amfa/
+   |  |	   |		|+-clma/
+   |  |	   |		|+-cpa/
+   |  |    |	 	|+-eda/
+   |  |	   |		|+-gla/
+   |  |	   |		|+-imma/
+   |  |	   |		|+-lga/
+   |  |	   |		|+-mqa/
+   |  |	   |		|+-ntfa/
+   |  |	   | 		|+-plma/
+   |  |    |+-common/ (Common sources for OpenSAF services)
+   |  |	   |+-core/ (OpenSAF core library)
+   |  |    |		|+-common/
+   |  |    |		|+-include/
+   |  |	   |		|+-leap/
+   |  |    |		|+-mbcsv/
+   |  |	   |		|+-mds/
+   |  |	   |+-saf/ (SAF Libraries)
+   |  |			|+-include/
+   |  |			|+-libSaAmf/
+   |  |			|+-libSaCkpt/
+   |  |			|+-libSaEvt/
+   |  |			|+-libSaImm/
+   |  |			|+-libSaLck/
+   |  |			|+-libSaLog/
+   |  |			|+-libSaMsg/
+   |  |			|+-libSaNtf/
+   |  |			|+-libSaPlm/
+   |  |+-services/ (Sources, Config files for Directors/ND/Servers of OpenSAF services)
+   |  |   	|+-infrastructure/ (Infrastructure services)
+   |  |		|	|+-dtms/
+   |  |		|	|+-fm/
+   |  |		|	|+-nid/
+   |  |		|	|+-rde/
+   |  |    	|+-saf/ (SAF services)
+   |  |			|+-amf/
+   |  |			|+-clmsv/
+   |  |			|+-cpsv/
+   |  |			|+-edsv/
+   |  |			|+-glsv/
+   |  |			|+-immsv/
+   |  |			|+-logsv/
+   |  |			|+-mqsv/
+   |  |			|+-ntfsv/
+   |  |			|+-plmsv/
+   |  |			|+-smfsv/
+   |  |+-tools/
+   |	       |+-safimm (IMM commandline utilities and IMM XML merge tool)
+   |	       |+-saflog (SAFLOG command line utility)
+   | 	       |+-safntf (SAFNTF command line utility)
+   |+-pkgconfig/ (OpenSAF Pkgconfig file)
+   |+-samples/ (OpenSAF sample applications for SAF services)
+   |+-scripts/ (OpenSAF scripts)
+   |+-tests/ (OpenSAF Test suites)
+   |+-tools (OpenSAF developer tools and UML devel environment)
+
+Prerequisites
+=============
+
+The following software is required to build OpenSAF:
+
+    * libxml2-dev (Development files for the GNOME XML library)
+    * automake
+    * m4
+    * autoconf (2.61 or later)
+    * libtool
+    * pkg-config
+    * gcc/g++
+    * GNU make
+    * python-dev(el)
+    * Optionally:
+        * The Linux Kernel with TIPC development support. This is required when opensaf is 
+	  built with the option --enable-tipc. OpenSAF works with TIPC version 1.5 onwards. But it 
+	  is strongly adviced to use TIPC 1.6.2 and above to get the TIPC service unsubscribe 
+	  feature(Cancellation to a Subscription).
+
+        * When PLM is enabled, an HPI implementation (e.g. OpenHPI)
+        * When IMM PBE feature is enabled, sqlite3
+
+    If enabling optional Java support:
+        - A Java 1.5+ capable JDK (e.g. OpenJDK 1.6)
+        - Apache Ant
+
+If a specific prerequisite package revision isn't working for you, please
+let us know about it following the instructions from the Bug Reporting section.
+
+
+Building `OpenSAF'
+==================
+
+Some features needs to be configured at build time but don't have configure
+support, these are explained here.
+
+1) Configure a non flat MDS addressing scheme (optional) when TIPC is chosen
+as the transport
+
+In the default (from 4.3) addressing scheme, TIPC node addresses looks like
+1.1.1, 1.1.2 etc.
+
+To re-enable the old (pre 4.3) non flat addressing, configure the constant
+MDS_USE_SUBSLOT_ID=1 at configure time as in:
+
+    % ./configure CPPFLAGS="-DMDS_USE_SUBSLOT_ID=1 ..."
+
+In the non flat scheme, the slot ID is shifted up 4 bits and subslot ID is 
+added in the 4 LSB. The consequence of this is reduced number of
+addressable TIPC nodes in the cluster. This scheme is more likely to be used
+in xTCA type of systems and produces node addresses like 1.1.31, 1.1.47 etc.
+
+More configuration is needed, see nid.conf in 00-README.conf
+
+
+2) Run as root (optional)
+
+If the old (<4.2) behaviour of running all processes as root is desired, use
+the following configure command:
+
+    % ./configure CPPFLAGS=-DRUNASROOT
+
+
+3) Configure TIPC importance (optional)
+
+The default TIPC importance is LOW for all services except for AVND which is HIGH.
+In some cases the default importance must be changed if e.g. an application starves the LOW importance communication level.
+To change the default importance, use the following configure command
+
+   % ./configure CPPFLAGS=-DTIPCIMPORTANCE=level
+   where level is any of TIPC_LOW_IMPORTANCE, TIPC_MEDIUM_IMPORTANCE or TIPC_HIGH_IMPORTANCE
+   e.g. configure CPPFLAGS=-DTIPCIMPORTANCE=TIPC_HIGH_IMPORTANCE
+
+Note: Giving same importance to AVND & all other Opensaf models is not preferred option. The behavior is unsupported.
+
+
+4) Configure GCC hardening options (optional)
+
+By default, the options "-fstack-protector -D_FORTIFY_SOURCE=2" are passed to
+GCC for improved security. You can override these options by setting the
+OSAF_HARDEN_FLAGS when configuring OpenSAF. For example:
+
+   % ./configure OSAF_HARDEN_FLAGS="-fstack-protector-all -D_FORTIFY_SOURCE=2"
+
+If you are using a released archive (dist tarball) follow the simple common
+steps:
+
+    % ./configure && make
+
+    OR
+
+    % ./configure && make rpm
+
+Note: `OpenSAF' can safely be built with parallel jobs using -jX, where X
+      should be the number of CPU you want to dedicate + 1
+
+If you are Building from `Mercurial', make sure you followed the required
+steps before trying to `configure' (i.e. bootsrapping).
+
+    % ./bootstrap.sh
+    % ./configure && make
+    OR
+    % ./configure && make rpm
+
+By default, OpenSAF is built with TCP as the transport.
+
+By default, all 'OpenSAF' services are enabled to be built and
+`OpenSAF' will assume the following `configure' options by default:
+
+    --disable-java --disable-imm-pbe --disable-tests
+
+Some OpenSAF services/features can be disabled through configure options.
+To alter the default configure options, the following configure options 
+are available w.r.t enabling/disabling the build for a particular OpenSAF service:
+(The below options can also be known from  the command  % ./configure --help)
+
+  --disable-rpath         Patches libtool to not use rpath in the libraries
+                          produced.
+  --disable-rpm-target    disable support for the "make rpm" target
+                          [default=no]
+  --enable-python         enable the Python AIS bindings [default=yes]
+  --enable-java           enable the Java AIS interface mapping [default=no]
+  --enable-am4j           enable the AM4J agent [default=no]
+  --enable-tipc           enable building the TIPC [default=no]
+  --enable-tests          enable building the OpenSAF testing programs
+                          [default=no]
+  --enable-imm-pbe        enable the IMM Persistent Backend Interface
+                          [default=yes]
+  --enable-ntf-imcn       enable the NTF Information Model Notification
+                          producer [default=no]
+  --disable-ais-ckpt      disable building the SAI-AIS-CKPT service
+                          [default=no]
+  --disable-ais-evt       disable building the SAI-AIS-EVT service
+                          [default=no]
+  --disable-ais-lck       disable building the SAI-AIS-LCK service
+                          [default=no]
+  --disable-ais-msg       disable building the SAI-AIS-MSG service
+                          [default=no]
+  --disable-ais-smf       disable building the SAI-AIS-SMF service
+                          [default=no]
+  --disable-ais-plm       disable building the SAI-AIS-PLM service
+                          [default=no]
+  --disable-dependency-tracking  speeds up one-time build
+  --enable-dependency-tracking   do not reject slow dependency extractors
+  --enable-shared[=PKGS]  build shared libraries [default=yes]
+  --enable-static[=PKGS]  build static libraries [default=yes]
+  --enable-fast-install[=PKGS]
+                          optimize for fast installation [default=yes]
+  --disable-libtool-lock  avoid locking (might break parallel builds)
+
+  --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
+  --without-PACKAGE       do not use PACKAGE (same as --with-PACKAGE=no)
+  --with-rpm-release=[ARG]
+                          set the RPM release value to be current timestamp
+                          (ARG=timestamp); set the RPM release value to be the
+                          global revision (ARG=global-rev); set the RPM
+                          release value to be the local revision
+                          (ARG=local-rev); set the RPM release value to be
+                          <val> (ARG=<val>, [default=1])
+  --with-hpi-interface=[ARG]
+                          autodetect the SAHPI_INTERFACE_VERSION (ARG=check
+                          [default]); set the SAHPI_INTERFACE_VERSION to
+                          A.01.01 (ARG=A01); set the SAHPI_INTERFACE_VERSION
+                          to B.01.01 (ARG=B01); set the
+                          SAHPI_INTERFACE_VERSION to B.02.01 (ARG=B02); set
+                          the SAHPI_INTERFACE_VERSION to B.03.01 (ARG=B03)
+  --with-initscriptdir=[DIR]
+                          use DIR as the directory containing the init.d
+                          scripts. [default=/etc/init.d]
+  --with-pic              try to use only PIC/non-PIC objects [default=use
+                          both]
+  --with-gnu-ld           assume the C compiler uses GNU ld [default=no]
+  --with-jdk=DIR          use JDK from DIR
+  --with-ant=DIR          Use ant from DIR
+
+Use one of the following forms to enable an option:
+
+    --with-<mumble>        OR --enable-<mumble>
+    --with-<mumble>=yes		OR	--enable-<mumble>=yes
+    --without-<mumble>=no	OR	--disable-<mumble>=no
+
+For eg:- To enable building the IMM PBE feature, use the following option:
+
+    % ./configure --enable-imm-pbe
+
+Use one of the following forms to disable an option:
+
+    --without-<mumble>		OR	--disable-<mumble>
+    --without-<mumble>=yes	OR	--disable-<mumble>=yes
+    --with-<mumble>=no		OR	--enable-<mumble>=no
+
+For eg:- To disable building the LOCK service, use the following option:
+
+     % ./configure --disable-ais-lck
+
+The `--with-<mumble>' option forms are used for external package support and
+the `--enable-<mumble>' option forms are used for internal component state.
+
+Note: When PLM is enabled, `OpenSAF' relies on <SaHpi.h>, even if
+the user thinks he's not using a specific HPI implementation. This is a build
+dependency and the user still needs to tell the build system to  be
+using the proper CPPFLAGS/CFLAGS/CXXFLAGS where to find a dummy <SaHpi.h>
+
+By using `./configure --enable-tipc', you are building OpenSAF to support TIPC 
+also as the transport. Upon enabling this option, the OpenSAF binaries
+support both TIPC and TCP as the transport and to use TIPC, you have to 
+change the variable MDS_TRANSPORT to TIPC in the 
+nid.conf file (see nid.conf in 00-README.conf). By choosing this option
+you have the flexibility to change from using tipc to tcp without having
+to rebuild.
+
+By using `./configure --enable-java', you are enabling the Java AIS mapping
+support in the build system. Specials M4 macros will be used to autodetect
+what `JDK' and `Ant' program you are using. By default this options is
+disabled.
+
+By using `./configure --with-jdk=DIR', you can force the build system to use
+a specific JDK installed in a non-standard location on your system.
+
+By using `./configure --with-ant=DIR', you can force the build system to use
+a specific Ant version installed in a non-standard location on your system.
+
+By using `./configure --with-rpm-release', you can change the default release
+token in the generated rpm filename. Predefined values exist like the build
+timestamp, the Mercurial revision used to when building the code, and also you
+can add your own free text token.
+
+By using `./configure --with-hpi-interface', you can force the HPI interface
+version used. By default it's autodetected by scanning the SaHpi.h header, but
+when cross-compiling is used it's not possible to run the test code for that
+autodetection.
+
+By using `./configure --disable-rpm-target', you are masking out the `make rpm'
+target, some build systems provide their own `make rpm` rule, it would then be
+clashing with the OpenSAF rule.
+
+
+Building `OpenSAF' RPMs
+=======================
+
+As shown in the Building `OpenSAF' section, generating RPMs can be done using:
+
+    % ./configure && make rpm
+
+The special `make rpm' target will generate a dist archive, create the
+`OpenSAF' SRPM using the opensaf.spec file, and finally launch the rpmbuild
+process. You can find the generated RPMs under `./rpms/RPMS/<build_arch>/':
+
+RPMs per OpenSAF Service are generated. For eg:-
+
+* opensaf-<svcname-director>-<Release>.<build_arch>.rpm:
+  RPM containing the particular OpenSAF service director/server's binaries,
+  libraries, CLC scripts, and the immxml classes and objects owned/implemented by the service.
+
+* opensaf-<svcname-nodedirector>-<Release>.<build_arch>.rpm:
+  RPM containing the particular OpenSAF service NodeDirector's binaries, CLC
+  scripts.
+
+* opensaf-<svcname-libs>-<version>.<Release>.<build_arch>.rpm:
+  RPM containing the particular OpenSAF service libraries to be linked by User
+  and any User Program (command line tool/utility) provided the service.
+
+With the default configure options, the following RPMs are generated:
+
+opensaf-<Release>.<arch>.rpm
+opensaf-controller-<Release>.<arch>.rpm
+opensaf-devel-<Release>.<arch>.rpm
+opensaf-samples-<Release>.<arch>.rpm
+opensaf-payload-<Release>.<arch>.rpm
+opensaf-amf-libs-<Release>.<arch>.rpm
+opensaf-clm-libs-<Release>.<arch>.rpm
+opensaf-imm-director-<Release>.<arch>.rpm
+opensaf-imm-libs-<Release>.<arch>.rpm
+opensaf-imm-nodedirector-<Release>.<arch>.rpm
+opensaf-libs-<Release>.<arch>.rpm
+opensaf-log-libs-<Release>.<arch>.rpm
+opensaf-log-server-<Release>.<arch>.rpm
+opensaf-ntf-libs-<Release>.<arch>.rpm
+opensaf-ntf-server-<Release>.<arch>.rpm
+opensaf-plm-coordinator-<Release>.<arch>.rpm
+opensaf-plm-hpi-<Release>.<arch>.rpm
+opensaf-plm-libs-<Release>.<arch>.rpm
+opensaf-plm-server-<Release>.<arch>
+opensaf-smf-director-<Release>.<arch>.rpm
+opensaf-smf-libs-<Release>.<arch>.rpm
+opensaf-smf-nodedirector-<Release>.<arch>.rpm
+opensaf-ckpt-director-<Release>.<arch>.rpm
+opensaf-ckpt-libs-<Release>.<arch>.rpm
+opensaf-ckpt-nodedirector-<Release>.<arch>.rpm
+opensaf-evt-libs-<Release>.<arch>.rpm
+opensaf-evt-server-<Release>.<arch>.rpm
+opensaf-lck-director-<Release>.<arch>.rpm
+opensaf-lck-libs-<Release>.<arch>.rpm
+opensaf-lck-nodedirector-<Release>.<arch>.rpm
+opensaf-msg-director-<Release>.<arch>.rpm
+opensaf-msg-libs-<Release>.<arch>.rpm
+opensaf-msg-nodedirector-<Release>.<arch>.rpm
+
+
+opensaf-controller: (Meta Package)
+Contains the controller specifc config, script files, the IMM classes 
+and objects for OpenSAF infrastructure services, And the 
+dependencies for installing the controller rpm.
+
+opensaf-payload: (Meta Package)
+Contains the payload specific config file And the dependencies for
+installing the payload rpm.
+
+opensaf-<Release>.<arch>.rpm
+Contains configuration and script file that are common to both 
+a controller/payload node configuration.
+
+opensaf-devel: (Optional)
+Contains the development headers and static & shared libs for user
+application development/linkage.
+
+opensaf-java: (Optional)
+Contains the Java AIS mapping jars and native libs.
+
+opensaf-samples: (Optional)
+Contains the sample applications source code.
+
+
+Installing `OpenSAF'
+====================
+
+`OpenSAF' can be installed in several ways. When doing development, a
+user might prefer using the classic `make install' way to using RPMs.
+It can be achieved like this:
+
+    % make install
+
+    OR
+
+    % make install DESTDIR=<staged_install_directory>
+
+After installing `OpenSAF' you will need to run `ldconfig' because `OpenSAF'
+places internal libs in the `$pkglibdir' (e.g. /usr/lib/opensaf/). This ldconfig
+operation is handled automatically by using rpm installation.
+
+In production systems, RPMs should be preferred to classic `make install`.
+
+To setup a development environment for a given OpenSAF service, install following RPMs:
+    % rpm -ivh opensaf-<svc_name>-libs-<Release>.<build_arch>.rpm
+    % rpm -ivh opensaf-devel-<Release>.<build_arch>.rpm
+    % rpm -ivh opensaf-samples-<Release>.<build_arch>.rpm
+
+If Java AIS mapping was enabled, install the following RPM:
+
+    % rpm -ivh opensaf-java-<version>.<build_arch>.rpm
+
+If you are installing `OpenSAF' from a supported `yum' server, it will resolve
+the proper dependencies for you:
+
+    % yum install opensaf-controller
+
+    OR
+
+    % yum install opensaf-payload
+
+Here is where individual `OpenSAF' components get installed:
+
+    * Documentation: `$docdir' (e.g /usr/share/doc/packages/opensaf/)
+    * Samples, Templates: `$pkgdatadir'/samples (e.g. /usr/share/opensaf/samples)
+    * IMM XML Merge tool: `pkgimmxmldir' (e.g. /usr/share/opensaf/samples/immxml
+    * SAF libraries: `$libdir' (e.g. /usr/lib/)
+    * SAF headers: `$includedir' (e.g. /usr/include/)
+    * Configuration: `$pkgsysconfdir' (e.g. /etc/opensaf/)
+    * OpenSAF headers: `$pkgincludedir' (e.g. /usr/include/opensaf/)
+    * Runtime Misc.: `$pkglocalstate' (e.g. /var/lib/opensaf/)
+    * OpenSAF internals(binaries,clc-scripts): `$pkglibdir' (e.g. /usr/lib/opensaf/)
+    * User programs: `$bindir' (e.g. /usr/bin/)
+    * SysV scripts: `$sysconfdir/init.d/' (e.g. /etc/init.d/)
+    * Logs: `$localstatedir/log/opensaf' (e.g. /var/log/opensaf/)
+    * PID: `$localstatedir/run/opensaf/' (e.g. /var/run/opensaf/)
+
+
+
+Linking with `OpenSAF' AIS Services
+===================================
+
+`OpenSAF' provides `pkgconfig' files for each AIS services.
+These files are installed with the other system `*.pc' files
+in `$(libdir)/pkgconfig':
+
+   * opensaf-amf.pc
+   * opensaf-ckpt.pc
+   * opensaf-clm.pc
+   * opensaf-evt.pc
+   * opensaf-imm.pc
+   * opensaf-lck.pc
+   * opensaf-log.pc
+   * opensaf-msg.pc
+   * opensaf-ntf.pc
+   * opensaf-plm.pc
+
+
+There are two easy ways to use `pkgconfig'. The first one is to call it directly
+from a `Makefile' and assign its content to make variables e.g.:
+
+   AMF_LIBS=`pkg-config opensaf-amf --libs`
+   AMF_CFLAGS=`pkg-config opensaf-amf --cflags`
+
+Or if your application is using the `GNU Build System' with `autotools', you can
+use a special `autoconf' macro provided by `pkgconfig' e.g.:
+
+   -- in configure.ac --
+   PKG_CHECK_MODULES(AMF, opensaf-amf)
+
+It will then provides two special variables available to `automake':
+
+   -- in Makefile.am --
+   mumble_CFLAGS = @AMF_CFLAGS@
+   mumble_LDADD = @AMF_LIBS@
+
+
+How to Configure `OpenSAF'
+==========================
+
+See file `00-README.conf' for the configuration file syntax/format.
+
+How to Run `OpenSAF'
+====================
+When PLM is enabled, The 'plmcd' SysV init script is installed in 
+`$sysconfdir/rc.d/init.d' (e.g. /etc/rc.d/init.d/) directory.
+
+The `OpenSAF' SysV init script is installed in `$sysconfdir/rc.d/init.d'
+(e.g. /etc/rc.d/init.d/)
+
+Commands to Start OpenSAF When PLM is disabled:
+===============================================
+After a minimum configuration of
+ - slot_id, nodeinit.conf.controller, node_name, imm.xml(Generated) and configure_tipc(if needbe), for the controller 
+  (OR)
+ - slot_id, nodeinit.conf.payload and node_name, for the payload.
+
+the following command shall start the OpenSAF services:
+
+% /etc/init.d/opensafd start [start|stop|status]
+
+Commands to Start OpenSAF When PLM is enabled:
+==============================================
+After a minimum configuration of 
+
+ - slot_id, nodeinit.conf.controller, node_name, imm.xml(Generated) and configure_tipc(if needbe) and the plmcd.conf, 
+   for the controller
+  (OR)
+ - slot_id, nodeinit.conf.payload, node_name and the plmcd.conf, for the payload
+
+The following commands shall be executed:
+
+% /etc/init.d/plmcd start
+
+% /etc/init.d/opensafd start [start|stop|status]
+
+Note: Its not necessary to start OpenSAF if an entry to start OpenSAF is
+set/specified in the plmcd.conf file.
+
+More TODO on status command.
+
+Command To Trigger a Administrative Switchover of the Controller Nodes:
+=======================================================================
+amf-adm si-swap safSi=SC-2N,safApp=OpenSAF
+
+Building `OpenSAF' Samples
+==========================
+
+The sources of the `OpenSAF' sample applications will get installed in
+`$pkgdatadir/samples' (e.g. /usr/share/opensaf/samples/).
+
+The following steps shall be done to build the sample applications:
+    % ./bootstrap.sh
+    % ./configure
+    % make
+      OR
+    % make install
+
+The `Makefile' looks for installed `SAF AIS' headers and `OpenSAF' libs in
+standard system wide locations (e.g. /usr/include/ & /usr/lib/):
+
+    INCLUDES = -I.
+    LDFLAGS = -lSaAmf
+
+If you have `OpenSAF' development packages installed somewhere else, override
+the default values e.g.:
+
+    % make INCLUDES="-I. -I/tmp/usr/local/include" \
+        LDFLAGS="-L/tmp/usr/local/lib -lSaAmf -lopensaf_core"
+
+To run an application you will need a configured `OpenSAF' node running.
+
+See file `00-README.samples' for more information on each of the application.
+
+
+Using the Simulation Environment
+================================
+
+See file `00-README.uml' for more information about User Mode Linux and `OpenSAF'
+
+Upgrading OpenSAF
+=================
+In OpenSAF 4.2, the non-standard DTSv (Distributed Tracing Service) has been retired/removed.
+Fresh installations (new users) of 4.2 shall generate a new 
+imm.xml(see file 00-README.conf).
+
+Users of OpenSAF 4.0.2 or OpenSAF 4.1.1 releases, who wish to perform an In-Service Upgrade
+to OpenSAF 4.2 using SMF based upgrade campaigns should do the following:
+
+1) Download OpenSAF 4.2 release source tar from http://sourceforge.net/projects/opensaf/files/releases/
+2) Apply the patch 4.2_upgrade_dummydtsv.patch from http://sourceforge.net/projects/opensaf/files/
+<FIXME: Patch name, link>
+3) Build OpenSAF 4.2 rpms
+4) Execute your SMF upgrade campaigns.
+
+The capability to modify the OpenSAF services' information model at run time
+has been added now in OpenSAF 4.2 and also in maintenance changesets of
+the 4.0.2 and 4.1.1 releases.
+You should track this section for information on steps to be done to permenantly delete
+the DTSv from the information model, in future releases.
+
+Note: When an OpenSAF installation(< 4.2) running with 'root' privileges and that may have 
+configured IMM persistent storage and/or contains old/generated  trace files, 
+is now being upgraded to OpenSAF 4.2 as the 'opensaf' user (i.e. non-root user), 
+Then it is the responsibility of the user/integrator to manage (through rpm scriptlets 
+or upgrade scripts) the permissions of the file/directory of the 
+immsv persistent store (see IMMSV_PBE_FILE in the $pkgsysconfdir/immnd.conf. 
+e.g. /etc/opensaf/immnd.conf file) and/or the permissions of any previous trace files 
+present under the $pkglogdir (e.g. /var/log/opensaf) directory, accordingly, if applicable.
+
+In OpenSAF 4.3, some new configuration attributes have been added to the SMF 
+configuration class. To make it possible to use these new attributes the new 
+class description needs to be added using the IMM schema change support. 
+This can be done after the 4.3 OpenSAF release have been activated.
+ 
+1) Enable the schema change support in the IMM: 
+immadm -o 1 -p opensafImmNostdFlags:SA_UINT32_T:1 opensafImm=opensafImm,safApp=safImmService
+
+2) Read in the new class descriptions : 
+immcfg --ignore-duplicates -f /usr/share/opensaf/immxml/services/smfsv_classes.xml
+ 
+3) Disable the schema change support in the IMM:  
+immadm -o 2 -p opensafImmNostdFlags:SA_UINT32_T:1 opensafImm=opensafImm,safApp=safImmService
+
+
+Admin Operations on OpenSAF SUs
+===============================
+From OpenSAF release 4.4 onwards, the AMF admin operations lock, lock-in,
+unlock, unlock-in is allowed to be performed on the OpenSAF SUs (i.e.
+safSu=<nodename>,safSg=2N,safApp=OpenSAF
+safSu=<nodename>,safSg=NoRed,safApp=OpenSAF)
+However, these commands should be restrictively used, like running them
+from a SMF campaign.  When running this from an SMF campaign,
+OpenSAF shall support the behaviour only when used under
+the supported usecases of OpenSAF. At this point of time,
+there is no evident usecase to support this.
+
+Linux Distro-Specific Notes
+===========================
+
+`OpenSAF' is known to run on the following Linux installations:
+
+    * Red Hat Enterprise Linux 4 (RHEL4)
+    * Red Hat Enterprise Linux 5.2 (RHEL5)
+    * Wind River Platform for Network Equipment, Linux Edition (PNE-LE)
+    * MontaVista Carrier Grade Edition 4.0
+    * Fedora Core 9
+    * SUSE Linux Enterprise 10 SP2
+    * SLES11 
+    *...
+
+More TODO
+
+<RHEL firewall rules, SELinux, SUSE crashes with -02, missing decent tipc.h etc.>
+
+-------------------------------------------------------------------------------
+
+Copyright (C) 2011 The OpenSAF Foundation
+
+

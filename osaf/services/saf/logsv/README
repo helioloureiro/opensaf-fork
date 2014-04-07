@@ -1,0 +1,514 @@
+#
+#      -*- OpenSAF  -*-
+#
+# (C) Copyright 2008 The OpenSAF Foundation
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+# or FITNESS FOR A PARTICULAR PURPOSE. This file and program are licensed
+# under the GNU Lesser General Public License Version 2.1, February 1999.
+# The complete license can be accessed from the following location:
+# http://opensource.org/licenses/lgpl-license.php
+# See the Copying file included with the OpenSAF distribution for full
+# licensing terms.
+#
+# Author(s): Ericsson AB
+#
+
+GENERAL
+
+This directory (logsv) contains an implementation of the SAF LOG service
+version A.02.01.
+
+The LOG service is implemented as a server process executing on the controllers
+using a 2N redundancy model. Message based check pointing is
+used to synchronize the two server instances.
+
+The Log file property "High Availability flag" is not supported by LOG itself
+but by using a replicated file system. The LOG implementation is unaware of 
+such a file system and must be configured to use it, see below.
+
+
+Important!
+----------
+Contibutors/Maintainers see section
+IMPORTANT INFORMATION FOR CONTRIBUTORS/MAINTAINERS.
+
+
+DEPENDENCIES
+
+logsv depends of the following other OpenSAF services:
+- MBCSV
+- MDS
+- BASE
+- logtrace
+
+
+DIRECTORY STRUCTURE
+
+services/logsv/inc	Common header files used by both lga and lgs
+services/logsv/lga	LOG library implementation
+services/logsv/lgs	LOG server
+services/logsv/utils	saflogger command
+lib/lib_SaLog		LOG library staging
+tests/logsv/src		Test suite
+
+
+FILE STRUCTURE
+
+Not yet ...
+
+
+DATA STRUCTURES
+
+lgs uses the following data structures:
+
+- Control block. Statically allocated, one instance. Access through a global
+pointer variable.
+
+- Stream descriptors. Dynamically created, many instances. Accessed using
+stream name or ID. Stored in patricia tree and array.
+
+- Client descriptors. Dynamically created, many instances. Accessed using a
+client ID. Stored in patricia tree. Contains the MDS address of the client.
+Also contains a list of Client-Stream association objects, see below.
+
+- Client-Stream association object. Dynamically created, many instances. One
+instance per open stream. Contains a stream ID. Access through client
+descriptor.
+
+lga uses the following data structures:
+
+- Control block. Statically allocated, one instance per library. Access
+through a global variable. The control block contains the head of a linked
+list with client descriptors.
+
+- Client descriptor. Dynamically allocated. One instance per call to
+saLogInitialize(). Contains callback pointers, handles and the head of a
+linked list with streams descriptors for this client.
+
+- Stream descriptor. Dynamically allocated. One instance per call to
+saLogStreamOpen_2() or saLogStreamOpenAsync_2(). Contains internals IDs
+and handles.
+
+
+OVERLOAD PROTECTION
+
+LOG uses a single mailbox used to communicate from the MDS thread to the
+main thread. An IPC mailbox has four priority levels. By default a level
+is unbounded in size, as many messages as the main memory allows can be
+queued. The mailbox provides a mechanism to put a a limit on how many
+messages that can be stored at the same time in it. LOG overload uses
+that feature.
+
+The highest level is used for control messages except for FINALIZE & CLOSE
+messages. The reason is that we want to keep those at the same priority as
+WRITE messages so that no writes will get discarded when a stream is closed
+or a client finalize the API. The three other mailbox priority levels are
+used for WRITE messages per stream type. Alarm use the next level, System
+and Notification share the next level and all application streams share the
+lowest priority level. The alarm level can never be bounded in size.
+
+The levels used for system and application streams has an optional
+configurable LOW and HIGH limit of queued messages. When the high limit
+is hit, the level enters the FULL state. This state will not be left 
+until the number of messages goes below the LOW limit. Messages received
+in the meantime will be nacked with a TRYAGAIN, but only if the client has
+requested so in the log record header. Otherwise it will be silently
+discarded (but counted as such). CLOSE & FINALIZE messages will never be
+rejected even though the level is full. If that happens, the message is
+queued at the (unlimited) control message level.
+
+Log records will be handled by the LOG server in the same priority.
+All Alarm log records will be written to disk before any System/notification
+log records. All System/notification log records will be written to disk
+before any application log records are written to disk. This reduces the
+risk to loose any important system events at sudden failure such as power
+outage.
+
+The low/high limits for system and app streams are configurable. See the
+next section. Different app streams share the same limits.
+
+
+CONFIGURATION
+
+The LOG specification describes the configuration object class 
+SaLogStreamConfig which requires the three streams alarm, notification and 
+system to exist (in IMM). The two LOG classes and objects for the three
+default streams are included in the OpenSAF IMM configuration. There is also a
+configuration object class OpenSafLogConfig used to configure the LOG Service
+itself. This class is not described in the LOG specification.
+
+Some implementation defined configuration can be done for the LOG service.
+Two ways of handling configuration is supported.
+
+1. Configuration using a configuration object in IMM:
+When the LOG service is started it looks for a configuration object of 
+OpenSafLogConfig class. If an object is found and is correct the parameters in the
+object will be used. The configuration file as described in section 2 will not
+be used. The parameters in the object corresponds with the parameters described
+in section 2. All parameters has a default value that is defined in the class
+definition. By default an object of this class is created with the object name
+"logConfig=1,safApp=safLogService" and no other attributes are set,
+meaning that all parameters will get their default value.
+
+The class defines the following parameters (logsv_classes.xml):
+
+NAME                        DEFAULT VALUE         COMMENT
+saLogRootDirectory          $pkglogdir/saflog
+saLogMaxLogrecsize          1024
+saLogStreamSystemHighLimit  0
+saLogStreamSystemLowLimit   0
+saLogAppHighLimit           0
+saLogAppLowLimit            0
+saLogMaxApplicationStreams  64
+logFileIoTimeout            500                   File I/O timeout (see file.c)
+logFileSysConfig            1                     Shared file system
+
+All the above attributes except saLogRootDirectory has a default value
+set in the class definition (see logsv_classes.xml). The value for parameter
+saLogRootDirectory is instead defined when the imm.xml file is created. In
+the logsv_objects.xml file the parameter value is set to "xxLOGDIRxx/saflog"
+and when the imm.xml file is created "xxLOGDIRxx" is replaced by the content of
+$pkglogdir. See also LOGSV_ROOT_DIRECTORY in the logd.conf file.
+
+The configuration file is still used to "enable trace" and
+"enable info level logging". Also the environment variable
+LGSV_ENV_HEALTHCHECK_KEY is used.
+
+logFileIoTimeout
+
+File IO is used in the log service e.g. log records are written to file. File IO
+operations may "hang" if for example the file system is not working correctly.
+This attribute contains the maximum time the log service is allowed to wait for
+e.g. writing a log record to complete. If writing a log record times out
+SA_AIS_ERR_TRY_AGAIN is returned in the corresponding callback.
+
+logFileSysConfig
+
+The log service can be configured to use a shared filesystem (default) or to
+write logs to two file systems e.g. local file system on SC nodes. In this
+configuration both active and standby handle log files.
+Possible configurations are:
+1 Shared file system
+2 Split file system
+
+2. Configuration using a configuration file with environment variables:
+This is the "old" way of handling configuration and is kept for backwards
+compatibility and is used if no IMM configuration object is found .
+The config file is typically:
+
+/etc/opensaf/logd.conf
+
+The LOG server start script sources the configuration file before it starts
+the LOG server. So any change in this will requires a restart of the LOG
+server which implies OpenSAF on that node.
+
+The following environment variable is required:
+
+LOGSV_ROOT_DIRECTORY
+
+This variable is needed to configure the "implementation defined root
+directory" as mentioned in the spec. All log files will be stored directly 
+in this directory or in a subdirectory. If HA characterisitcs are needed for 
+LOG streams, configure this directory to point to replicated (shared & 
+persistent) partition.
+
+The following environment variables are optional:
+
+LOGSV_MAX_LOGRECSIZE
+
+The maximum size of a log record. The size must be at least 256 byte.
+
+LOG_STREAM_SYSTEM_HIGH_LIMIT
+
+The high limit for the system/notification streams. Default unlimited. A
+reasonable value would be 300 (messages).
+
+LOG_STREAM_SYSTEM_LOW_LIMIT
+
+The low limit for the system/notification streams. Only valid and used if
+a high limit has been defined. Defaults to some percent of the high limit
+(if not specified).
+
+LOG_STREAM_APP_HIGH_LIMIT
+
+The high limit for all application streams. Default unlimited. A
+reasonable value would be 300 (messages).
+
+LOG_STREAM_APP_LOW_LIMIT
+
+The low limit for the all application streams. Only valid and used if
+a high limit has been defined. Defaults to some percent of the high limit
+(if not specified).
+
+LOG_MAX_APPLICATION_STREAMS
+
+The maximum number of application log streams that can be created.
+
+Don't forget the "export" keyword before the variable!
+
+
+COMMAND LINE INTERFACE
+
+The 'saflogger' command can be used to enter log records to any stream. Please
+see the on line help for more information.
+
+
+DEBUG
+
+Log server traces are by default disabled. To enable/disable log server traces 
+in a running system, send signal USR1 to the osaflogd process. Every time the 
+trace state is toggled. Example:
+
+	$ pkill -USR2 osaflogd
+
+Traces are written to the file:
+
+	$pkglogdir/osaflogd
+
+To enable traces from the very start of the log server, uncomment the line:
+
+        #args="--tracemask=0xffffffff"
+
+in logd.conf (see CONFIGURATION above) and restart the cluster.
+
+For fatal errors syslog is used.
+
+
+TEST
+
+Currently a simple unit test can be found in 'tests/logsv/src'. The test suite
+is built by the main make system and is either install by 'make install' or by
+installing the tools rpm.
+
+
+TODO
+
+- Implement missing API functions:
+	- saLogStreamOpenAsync_2
+	- saLogWriteLog
+	- saLogLimitGet
+	- saLogFilterSetCallback
+	- saLogStreamOpenCallback
+- NID start of the log server process.
+- Implement CLM interaction as described in 3.2
+- Implement Log filtering (IMM needed for configuration)
+- Implement log file full actions other than rotate
+- Write optimization, no sync for log write
+- Cleanup/act on "FIX" and "TODO" comments
+- Revisit trace statements, cleanup
+- Cleanup remains of edsv (search for 'channel')
+- Implement "6 Alarms and Notifications" (NTF needed)
+- On standby, query local MDS-layer for status of an agent before updating data
+  structures during sync.
+- Distributed testing
+- Document manual test cases
+
+
+IMPORTANT INFORMATION FOR CONTRIBUTORS/MAINTAINERS
+
+File IO:
+File operations are no longer allowed in the log-server main thread. This is in
+order to prevent "hanging" of the log-server if a file operation does not return
+e.g. when a NFS filesystem is not working correctly. It is therfore very
+important that no future code do any file-system operations in the main thread.
+
+All file system operations are handled in a separate thread.
+Use this thread to handle complete functions or parts of functions that has any
+type of interaction with the file system. Internally all or some of the code is
+done in a "handler" that is running in the second thread.
+See lgs_filehdl.c, lgs_stream.c and lgs_util.c for examples.
+Functions that uses a "handler" has got extention _h in the function name
+e.g. fileopen(..) -> fileopen_h(..). All handlers can be found in file
+lgs_filehdl.c
+
+File system configuration:
+When using UML (tools/cluster_sim_uml) the file system can be configured for
+both shared and split file system. This is done by setting the value of
+logFileSysConfig in logsv_objects.xml before running the ./build_uml script.
+
+
+CONTRIBUTORS/MAINTAINERS
+
+Arne Eriksson <Arne.R.Eriksson@ericsson.com>
+Hans Feldt <Hans.Feldt@ericsson.com>
+Niklas Nilsson
+Lennart Lund <lennart.lund@ericsson.com>
+
+The LOG service was originally cloned from the edsv service.
+
+
+=================
+Split file system
+=================
+
+
+GENERAL
+
+The log service can be configured to be used without a shared file system.
+In this configuration all handling of log files is done on both nodes local file
+system.
+
+
+CONFIGURATION
+
+The log service must be able to handle files in two ways.
+
+1. Using a shared file system the same way as today.
+
+2. Using the local file system on both nodes. The same log records will be
+   written on both file systems. The directory structure and file names are
+   also the same.
+
+An attribute in the log service configuration object is used to select
+configuration. Default configuration is shared file system (configuration 1).
+
+
+CHECK-POINTING
+
+Only the active node will receive requests from the agent. The request are
+handled in the event handler (lgs_evt). The standby node will get information
+about the requests from the active node via check pointing.
+
+In configuration 1; standby will use this information to update the internal
+information structure e.g. information about connected clients, used file names
+etc. but no files will be created or written.
+
+In configuration 2; standby will also create and open files and write log
+records. This is done in the check point handlers (lgs_mbcsv) that corresponds
+to the event handlers on the active node.
+
+As is changes of the log service configuration object is handled on standby
+using IMM applier. This is changed so that mbcsv is used for all
+synchronization.
+
+
+The following is check-pointed and done on standby:
+===================================================
+
+If something goes wrong the general behavior is to restart the component using
+saAmfComponentErrorReport(...,SA_AMF_COMPONENT_RESTART,...) in order to avoid
+being out of sync (will trig a mbcs cold sync).
+
+Checkpointed
+------------
+
+initialize client:
+    Adds a new client.
+
+finalize client:
+	Removes a client. Also removes streams that has no more clients.
+
+    If config 2:
+
+    closing and renaming the corresponding files.
+
+agent down:
+    Client corresponding to MDS destination is removed. See also finalize.
+
+log write:
+    The following is check-pointed and internal data is updated:
+    logRecordId
+    curFileSize
+    logFileCurrent
+
+    If config 2:
+
+    logRecordString
+    logRecordSize
+
+    Create files if new stream.
+    Write record to log file.
+    Rotate if logFileCurrent changes.
+    
+open stream:
+    Log files are created when a stream is opened for the first time. This means
+    creating the file names, creating a config file and creating and opening the
+    log file. If this fails the files are created and opened when trying to
+    write a log record to the stream. This is done in the event handler when
+    receiving an "stream open" event from the agent. 
+
+    If config 2:
+
+    As above but is done in the check point handler when receiving an "open
+    stream" check point.
+
+
+close stream:
+    A log stream is closed for a client.
+    
+    If config 2:
+
+	If last client files are closed and renamed same as on active node.
+
+cfg stream:
+    Attributes for a log stream are changed. Internal data is updated. This is
+    done for both streams with runtime objects and configuration objects. On
+    active node this is handled with an object implementer (lgs_imm) and changes
+    are check pointed to standby.
+
+    If config 2:
+
+    In some cases the configuration file and log file has to be handled. Must
+    be done also on standby. This is done in the check point handler.
+
+cfg config:
+    Attributes in the log service configuration object are changed. Internal
+    data is updated. On active node this is handled with an object implementer
+    (lgs_imm) and changes are check pointed to standby. Currently only attribute
+    logRootDirectory can be changed in runtime. When this happen all files are
+    closed and new files are created at the new location for all open streams.
+
+    If config 2:
+
+    Files has to be handled as on active. This is done in the check point
+    handler.
+
+
+SYNCHRONIZATION
+
+Synchronization of internal data
+--------------------------------
+
+The only synchronization that is used in the log service is mbcs cold sync. This
+synchronization is trigged when standby detects a new active.
+Cold sync:
+ - At start up / restart
+ - When changing role
+ - When standby detects out of sync.
+   AMF is requested to perform a component restart (of standby)
+   "saAmfComponentErrorReport(...,SA_AMF_COMPONENT_RESTART,...)"
+
+
+Synchronization of files and handling of log records
+----------------------------------------------------
+
+Active node check point parameter used for file handling changes to standby.
+
+On standby if configuration 2:
+ - Log files are created when a stream is opened for the first time. This means
+   creating the file names, creating a config file and creating and opening the
+   log file. If this fails the files are created and opened when trying to write
+   a log record to the stream.
+ - Rotate log files when "logFileCurrent" change (means that file rotation has
+   been done on active). Also rotate if the log files reaches it's size limit.
+   In this case the new file name is based on time read from own node.
+   If active check point a new "logFileCurrent" after a local file has been
+   created a file rotation is done and "logFileCurrent" is used as new file
+   name.
+
+ - For log records, time stamp and log-record-id check-pointed from active is
+   always used on standby.
+ - In some situations log records can be out of sync e.g. if standby is
+   restarted when active is writing log records. The log server detects this by
+   comparing last written log record id with the id of a log record to be
+   written. The id to write shall be last + 1 if we are in sync.
+   If out of sync the following is done:
+   - The log service creates a log record with id 0 (id 0 is not used for "real"
+     log records) and writes it to the stream log file. This log record has the
+     same format as the other log records. It contains a message with
+     information about the problem. The message also contains the Id of the
+     previous record and the Id of the record to be written.
+   - Write the check pointed log record.
+

@@ -1,0 +1,252 @@
+#
+#      -*- OpenSAF  -*-
+#
+# (C) Copyright 2008 The OpenSAF Foundation
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+# or FITNESS FOR A PARTICULAR PURPOSE. This file and program are licensed
+# under the GNU Lesser General Public License Version 2.1, February 1999.
+# The complete license can be accessed from the following location:
+# http://opensource.org/licenses/lgpl-license.php
+# See the Copying file included with the OpenSAF distribution for full
+# licensing terms.
+#
+# Author(s): Ericsson AB
+#
+
+GENERAL
+=======
+This directory (smfsv) contains an implementation of the SAF SMF service
+version A.01.02.
+
+The SMF service is implemented as a director process (smfd) executing on the controllers
+using a 2N redundancy model and a node director (smfnd) process executing on all nodes 
+without redundancy. The node director is a helper process used by the director when
+a command needs to be executed on a specific node (e.g. bundle install/remove scripts).
+The smfnd component does also support handling of SMF callbacks through the SMF API.
+
+The smfd is the process that is the IMM-OI for the campaigns and executes the actual 
+upgrade campaign. Only one campaign can be executed at the time.
+When the admin operation execute is called on a campaign object a campaign thread is 
+started that will execute the campaign. The campaign thread will parse the campaign 
+xml file and create upgrade procedure threads for each procedure in the campaign. 
+The procedure threads will in turn be executed by sending an execute message to them. 
+Within the procedure thread each upgrade step will be executed in sequence. Between
+each step in the procedure the execution is interrupted and a message is sent to the 
+procedure thread to execute the next step. This is done so that it'll be possible to 
+send a suspend message to the procedure thread to interrupt the execution. 
+
+The design is intended to handle cases where the smfd needs to move between the two
+controllers in the middle of an campaign execution e.g. when upgrading opensaf itself.
+It's even thought to handle an upgrade where the whole cluster is rebooting in the
+middle of the campaign e.g. OS upgrade on all nodes at the same time.
+This is acheived by storing information in the IMM instead of using e.g. the CKPT 
+service.
+
+
+DEPENDENCIES
+============
+smfsv depends of the following other OpenSAF services:
+- IMM
+- NTF
+- AMF
+- MDS
+- BASE
+- logtrace
+
+DIRECTORY STRUCTURE
+===================
+services/saf/smfsv/config		Configuration files
+services/saf/smfsv/doc			SMF code documentation
+services/saf/smfsv/schema		XML schema files
+services/saf/smfsv/scripts		SMF script files
+services/saf/smfsv/smfd			SMF director implementation
+services/saf/smfsv/smfnd		SMF node director implementation
+libs/agents/saf/smfa			SMF Agent implementation
+libs/common/smfsv/include/		Common include files between smfd and smfnd
+
+FILE STRUCTURE
+==============
+Not yet ...
+
+DATA STRUCTURES
+===============
+smfd uses the following data structures:
+
+- Control block. Statically allocated, one instance. Access through a global
+pointer variable.
+
+smfnd uses the following data structures:
+
+- Control block. Statically allocated. Access through a global variable. 
+The control block contains list of registered SMF callbacks (future).
+
+
+STATE MACHINES
+==============
+There are three state machines defined in the SMF specification.
+-Campaign state machine
+-Procedure state machine
+-Step state machine
+
+Implemented campaign states (all) :
+   SA_SMF_CMPG_INITIAL =1,
+   SA_SMF_CMPG_EXECUTING = 2,
+   SA_SMF_CMPG_SUSPENDING_EXECUTION = 3,
+   SA_SMF_CMPG_EXECUTION_SUSPENDED = 4,
+   SA_SMF_CMPG_EXECUTION_COMPLETED = 5,
+   SA_SMF_CMPG_CAMPAIGN_COMMITTED = 6,
+   SA_SMF_CMPG_ERROR_DETECTED = 7,
+   SA_SMF_CMPG_SUSPENDED_BY_ERROR_DETECTED = 8,
+   SA_SMF_CMPG_ERROR_DETECTED_IN_SUSPENDING = 9,
+   SA_SMF_CMPG_EXECUTION_FAILED = 10,
+   SA_SMF_CMPG_ROLLING_BACK = 11,
+   SA_SMF_CMPG_SUSPENDING_ROLLBACK = 12,
+   SA_SMF_CMPG_ROLLBACK_SUSPENDED = 13,
+   SA_SMF_CMPG_ROLLBACK_COMPLETED = 14,
+   SA_SMF_CMPG_ROLLBACK_COMMITTED = 15,
+   SA_SMF_CMPG_ROLLBACK_FAILED = 16
+
+Implemented procedure states (all) :
+   SA_SMF_PROC_INITIAL =1,
+   SA_SMF_PROC_EXECUTING = 2,
+   SA_SMF_PROC_SUSPENDED = 3,
+   SA_SMF_PROC_COMPLETED = 4,
+   SA_SMF_PROC_STEP_UNDONE = 5,
+   SA_SMF_PROC_FAILED = 6,
+   SA_SMF_PROC_ROLLING_BACK = 7,
+   SA_SMF_PROC_ROLLBACK_SUSPENDED = 8,
+   SA_SMF_PROC_ROLLED_BACK = 9,
+   SA_SMF_PROC_ROLLBACK_FAILED = 10
+
+Implemented step states (all) :
+   SA_SMF_STEP_INITIAL =1,
+   SA_SMF_STEP_EXECUTING = 2,
+   SA_SMF_STEP_UNDOING = 3,
+   SA_SMF_STEP_COMPLETED = 4,
+   SA_SMF_STEP_UNDONE = 5,
+   SA_SMF_STEP_FAILED = 6,
+   SA_SMF_STEP_ROLLING_BACK = 7,
+   SA_SMF_STEP_UNDOING_ROLLBACK = 8,
+   SA_SMF_STEP_ROLLED_BACK = 9,
+   SA_SMF_STEP_ROLLBACK_UNDONE = 10,
+   SA_SMF_STEP_ROLLBACK_FAILED = 11
+
+State machines follows the state design pattern described in "Design Patterns,
+ISBN 0-201-63361-2".
+
+
+ADMINISTRATIVE API
+==================
+The SaSmfCampaign object accepts administrative operations.
+The follwing admin operations are implemented:
+   SA_SMF_ADMIN_EXECUTE = 1,
+   SA_SMF_ADMIN_ROLLBACK = 2,
+   SA_SMF_ADMIN_SUSPEND = 3,
+   SA_SMF_ADMIN_COMMIT = 4,
+   SA_SMF_ADMIN_VERIFY = 10
+
+SA_SMF_ADMIN_VERIFY is an extension to the SMF standard. It's used to verify
+that a campaign is OK to be executed without actually starting the execution.
+
+
+SMF ADAPTATION COMMANDS
+=======================
+SMF expects some commands to be available during execution. These commands are 
+called SMF adaptation commands.
+
+Smf is delivered with default implementations of these adaptation commands
+  smf_backup_create
+  smf_repository_check
+  smf_bundle_check
+  smf_node_check
+  smf_cluster_reboot
+
+The default implementations are simple examples working on an OpenSAF reference configuration.
+These commands must typically be reimplemented to fit a specific system running OpenSAF. 
+
+The default implementation of the commands needed by SMF at runtime are located as below:
+/usr/local/lib/opensaf/smf_repository_check
+/usr/local/lib/opensaf/smf_node_check
+/usr/local/lib/opensaf/smf_cluster_reboot
+/usr/local/lib/opensaf/smf_bundle_check
+/usr/local/lib/opensaf/smf_backup_create
+
+The locations of the specific implementations are pointed out by the SMF configuration
+object described below. To override the default implementations appropriate attributes must be 
+set to point to the new locations (see chapter SMF CONFIGURATION).
+
+SMF CONFIGURATION
+=================
+SMF configuration data is kept by the SMF configuration class "smfConfig". The DN of the 
+configuration object is "smfConfig=1,safApp=safSmfService".
+
+Example below:
+# immlist smfConfig=1,safApp=safSmfService
+Name                                               Type         Value(s)
+========================================================================
+smfVerifyTimeout                                   SA_TIME_T    100000000000 (0x174876e800, Thu Jan  1 01:01:40 1970)
+smfVerifyEnable                                    SA_UINT32_T  0 (0x0)
+smfSiSwapSiName                                    SA_STRING_T  safSi=SC-2N,safApp=OpenSAF 
+smfSiSwapMaxRetry                                  SA_UINT32_T  200 (0xc8)
+smfRepositoryCheckCmd                              SA_STRING_T  /usr/local/lib/opensaf/smf-repository-check 
+smfRebootTimeout                                   SA_TIME_T    600000000000 (0x8bb2c97000, Thu Jan  1 01:10:00 1970)
+smfNodeRebootCmd                                   SA_STRING_T  reboot 
+smfNodeCheckCmd                                    SA_STRING_T  /usr/local/lib/opensaf/smf-node-check 
+smfNodeBundleActCmd                                SA_STRING_T   
+smfInactivatePbeDuringUpgrade                      SA_UINT32_T  1 (0x1)
+smfImmPersistCmd                                   SA_STRING_T  immdump /etc/opensaf/imm.xml 
+smfConfig                                          SA_STRING_T  smfConfig=1 
+smfClusterRebootCmd                                SA_STRING_T  /usr/local/lib/opensaf/smf-cluster-reboot 
+smfCliTimeout                                      SA_TIME_T    600000000000 (0x8bb2c97000, Thu Jan  1 01:10:00 1970)
+smfCampMaxRestart                                  SA_UINT32_T  10 (0xa)
+smfBundleCheckCmd                                  SA_STRING_T  /usr/local/lib/opensaf/smf-bundle-check 
+smfBackupCreateCmd                                 SA_STRING_T  /usr/local/lib/opensaf/smf-backup-create 
+smfAdminOpTimeout                                  SA_TIME_T    600000000000 (0x8bb2c97000, Thu Jan  1 01:10:00 1970)
+
+RPM
+===
+SMF is included in the following RPM's
+opensaf-smf-libs-x.x.x
+opensaf-smf-director-x.x.x
+opensaf-smf-nodedirector-x.x.x
+
+COMMAND LINE INTERFACE
+======================
+SMF delivers the following commands :
+smf-state
+smf-adm
+smf-find
+
+DEBUG
+=====
+To enable/disable log server traces in a running system, send signal USR2 to the
+smfd/smfnd process. Every time the trace state is toggled.
+
+Traces are written to the file:
+
+	$pkglogdir/osafsmfd.log
+	$pkglogdir/osafsmfnd.log
+
+To enable traces from the very start of the smf server, uncomment the line:
+
+        #args="--tracemask=0xffffffff"
+
+in smfd.conf and/or smfnd.conf (see CONFIGURATION above) and restart the system.
+
+For fatal errors and notices about the execution the syslog is used.
+
+
+TEST
+====
+To run campaigns in UML environment see the README file in
+directory "samples/smfsv"
+
+
+CONTRIBUTORS/MAINTAINERS
+========================
+Bertil Engelholm <bertil.engelholm@ericsson.com>
+Ingvar Bergström <ingvar.bergstrom@ericsson.com>
+
+The SMF service was originally cloned from the immsv and log services.

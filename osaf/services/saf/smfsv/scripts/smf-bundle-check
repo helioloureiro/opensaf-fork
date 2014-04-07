@@ -1,0 +1,43 @@
+#!/bin/sh 
+#
+#      -*- OpenSAF  -*-
+#
+# (C) Copyright 2008 The OpenSAF Foundation
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+# or FITNESS FOR A PARTICULAR PURPOSE. This file and program are licensed
+# under the GNU Lesser General Public License Version 2.1, February 1999.
+# The complete license can be accessed from the following location:
+# http://opensource.org/licenses/lgpl-license.php
+# See the Copying file included with the OpenSAF distribution for full
+# licensing terms.
+#
+# Author(s): Ericsson AB
+#
+# This command is called during the prerequisites test described in:
+# Service AvailabilityT Forum Application Interface Specification
+# Software Management Framework SAI-AIS-SMF-A.01.02
+# 4.1.1 Upgrade Prerequisites
+# Test 6. The desired version of the software is available in the software repository, and all
+#         the dependencies of the required packages have been checked and are satisfied.
+#
+# This file contain the default implementation of SMF bundle check.
+# The default implementation is just a placeholder for the sw bundle test call from SMF.
+# The tests shall be written by the user to fit the actual system hosting OpenSAF.
+#
+# Interface: The command is called with the sw budle DN as parameter.
+#            configuredCommand <swBundleDN>
+#
+
+prg=`basename $0`
+
+log() {
+    echo "$@"
+    logger -t $prg -p user.debug "$@"
+}
+
+#Perform the bundle tests
+log "SMF bundle check , bundle DN = $1"
+
+exit 0

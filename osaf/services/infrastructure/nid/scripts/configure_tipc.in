@@ -1,0 +1,211 @@
+#!/bin/bash 
+#
+#      -*- OpenSAF  -*-
+#
+# (C) Copyright 2008 The OpenSAF Foundation
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+# or FITNESS FOR A PARTICULAR PURPOSE. This file and program are licensed
+# under the GNU Lesser General Public License Version 2.1, February 1999.
+# The complete license can be accessed from the following location:
+# http://opensource.org/licenses/lgpl-license.php
+# See the Copying file included with the OpenSAF distribution for full
+# licensing terms.
+#
+# Author(s): Emerson Network Power
+#
+
+. @sysconfdir@/@PACKAGE_NAME@/osafdir.conf
+. $pkgsysconfdir/nid.conf
+
+TIPC_MODULE=/lib/modules/$(uname -r)/kernel/net/tipc.ko
+CHASSIS_ID_FILE=$pkgsysconfdir/chassis_id
+SLOT_ID_FILE=$pkgsysconfdir/slot_id
+SUBSLOT_ID_FILE=$pkgsysconfdir/subslot_id
+
+# Configure TIPC in network mode. If the variable TIPC_MODULE points to a file,
+# 'insmod' is used else 'modprobe'. 'tipc-config' needs to be in the path.
+
+# Support for using subslot ID as part the TIPC network address.
+# When TIPC_USE_SUBSLOT_ID is set to "NO" (the default), the subslot ID is 
+# not included in the address and slot ID is not shifted thus producing
+# TIPC addresses like 1.1.1, 1.1.2, 1.1.3 etc.
+# When TIPC_USE_SUBSLOT_ID is set to "YES", the subslot ID becomes the last 4 bits
+# of the address and the slot ID is shifted up 4 bits. 
+USE_SUBSLOT_ID=${TIPC_USE_SUBSLOT_ID:-"NO"}
+
+# constants
+SHIFT4=4
+
+# Make sure tipc-config is available, either in path or in default location
+tipc_config=$(which tipc-config 2> /dev/null)
+if ! [ -x ${tipc_config} ]; then
+    echo "error: tipc-config is not available"
+    exit 1
+fi
+# Get the Chassis Id and Slot Id from @sysconfdir@/@PACKAGE_NAME@/chassis_id and @sysconfdir@/@PACKAGE_NAME@/slot_id
+if ! test -f "$CHASSIS_ID_FILE"; then
+   echo "$CHASSIS_ID_FILE doesnt exists, exiting ...." 
+   exit 1
+fi
+CHASSIS_ID=`cat "$CHASSIS_ID_FILE"`
+if [ "$CHASSIS_ID" -gt "16" ] || [ "$CHASSIS_ID" -lt "1" ]  
+    then 
+      echo "CHASSIS ID Should be in the range of 1 to 16"
+      echo "Quitting......"
+      exit 1
+fi
+if ! test -f "$SLOT_ID_FILE"; then
+   echo "$SLOT_ID_FILE doesnt exists, exiting ...." 
+   exit 1
+fi
+SLOT_ID=`cat "$SLOT_ID_FILE"`
+if [ "$SLOT_ID" -gt "255" ] || [ "$SLOT_ID" -lt "1" ]  
+    then 
+      echo "SLOT ID Should be in the range of 1 to 255"
+      echo "Quitting......"
+      exit 1
+fi
+if ! test -f $SUBSLOT_ID_FILE; then
+    echo "$SLOT_ID_FILE doesnt exist, exiting ...." 
+    exit 1
+fi
+SUBSLOT_ID=`cat $SUBSLOT_ID_FILE`
+if [ "$SUBSLOT_ID" -gt "15" ] || [ "$SUBSLOT_ID" -lt "0" ]; then
+    echo "SUBSLOT ID Should be in the range of 0 to 15"
+    echo "Quitting......"
+    exit 1
+fi
+
+if [ "$#" -lt "1" ] ||  [ "$#" -gt "4" ]
+   then
+     echo " If you want to use TIPC in Non Networking mode"
+     echo " Usage: $0 start &"
+     echo " If you want to use TIPC in Networking mode"
+     echo " Usage: $0 start ifname[,ifname] <netid[1-9999]>"
+     echo " Example: interface eth0 and netid 7777"
+     echo " $0 start eth0 7777 &"
+     echo " Example: interface eth0 and eth1 and netid 9999"
+     echo " $0 start eth0,eth1 9999"
+     exit 1
+fi
+
+ETH_NAME=$2
+TIPC_NETID=$3
+
+if [ $# -gt 1 ] ; then 
+    if [ "$TIPC_NETID" -gt "9999" ] || [ "$TIPC_NETID" -lt "1" ]  
+      then 
+        echo "CORE ID Should be in the range of 1 to 9999"
+        echo "Quitting......"
+        exit 1
+    fi
+fi    
+
+printf "00%02x%02x%02x\n" $CHASSIS_ID $SLOT_ID $SUBSLOT_ID > $pkglocalstatedir/node_id
+chmod 744 $pkglocalstatedir/node_id
+if [ "$USE_SUBSLOT_ID" = "YES" ]; then
+    TIPC_NODEID=$(($SLOT_ID << $SHIFT4))
+    TIPC_NODEID=$(($TIPC_NODEID + $SUBSLOT_ID))
+else    
+    TIPC_NODEID=$SLOT_ID    
+fi
+
+function tipc_configure ()
+{
+    echo "Inserting TIPC mdoule..."
+    
+    if ! test -f "$TIPC_MODULE"  ; then
+      modprobe tipc
+    else 
+      insmod "$TIPC_MODULE"
+    fi
+
+    ret_val=$?
+    if [ $ret_val -ne 0 ] ; then
+        logger -p user.err " TIPC Module could not be loaded "
+        exit 1
+    fi
+
+    # max_nodes is not supported in TIPC 2.0
+    if ${tipc_config} -max_nodes 2> /dev/null; then
+        ${tipc_config} -max_nodes=2000 
+        ret_val=$?
+        if [ $ret_val -ne 0 ] ; then 
+            echo "Unable to set the Max_nodes to 2000, exiting ....."
+            modprobe -r tipc
+            exit 1
+        fi
+    fi
+
+    if [ $# -eq 1 ] ; then
+            echo "Configuring TIPC in Non-Networking Mode..."
+            ################ Address config and check #########
+            ${tipc_config} -a=1.1.$TIPC_NODEID 
+            ret_z1=$?
+            if [ $ret_z1 -ne 0 ] ; then 
+                echo "Unable to Configure TIPC address, Please try again, exiting" 
+                echo "Removing TIPC module ...."
+                modprobe -r tipc
+                exit 1
+            fi
+    else
+        echo "Configuring TIPC in Networking Mode..."
+        ################ Address config and check #########
+        ${tipc_config} -netid=$TIPC_NETID -a=1.1.$TIPC_NODEID  
+        ret_z2=$?
+        if [ $ret_z2 -ne 0 ] ; then 
+            echo "Unable to Configure TIPC address, Please try again, exiting" 
+            echo "Removing TIPC module ...."
+            modprobe -r tipc
+            exit 1
+        fi
+        ################ Interface config and check #########
+        ${tipc_config} -be=$(echo $ETH_NAME | sed 's/^/eth:/;s/,/,eth:/g')
+        ret_z3=$?
+        if [ $ret_z3 -ne 0 ] ; then 
+            echo "Unable to Configure TIPC bearer interface, Please try again, exiting" 
+            echo "Removing TIPC module ...."
+            modprobe -r tipc
+            exit 1
+        fi
+    fi   
+
+    echo " TIPC Module is Present and Configured Success in network mode " 
+}
+
+# Consider that TIPC could be statically linked
+if ! grep TIPC /proc/net/protocols >& /dev/null; then
+    tipc_configure
+else
+    # TIPC is already present, is it configured properly?
+    configured_tipc_addr=`tipc-config -addr | tr -s '<>' % | cut -d% -f2`
+    opensaf_tipc_addr=1.1.$TIPC_NODEID
+    if [ $configured_tipc_addr != $opensaf_tipc_addr ]; then
+        logger -t opensaf -s "TIPC node address not configured to OpenSAF requirements, exiting..."
+        exit 1
+    fi
+
+    configured_net_id=`tipc-config -netid | cut -d: -f2`
+    opensaf_net_id=$TIPC_NETID
+    if [ $configured_net_id != $opensaf_net_id ]; then
+        logger -t opensaf -s "TIPC network ID not configured to OpenSAF requirements, exiting..."
+        exit 1
+    fi
+    configured_net_id=`tipc-config -netid | cut -d: -f2`
+    opensaf_net_id=$CORE_ID
+    if [ $configured_net_id != $opensaf_net_id ]; then
+        logger -t opensaf -s "TIPC network ID not configured to OpenSAF requirements, exiting..."
+        exit 1
+    fi
+
+    configured_bearer=`tipc-config -b | grep -v Bearer | cut -d: -f2`
+    opensaf_bearer=$ETH_NAME
+    if [ $configured_bearer != $opensaf_bearer ]; then
+        logger -t opensaf -s "TIPC bearer not configured to OpenSAF requirements, exiting..."
+        exit 1
+    fi
+fi
+
+

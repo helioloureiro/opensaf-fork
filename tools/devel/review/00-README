@@ -1,0 +1,166 @@
+Commit Message Format
+=====================
+
+The patch review process heavily relies on properly formatted commit messages.
+Use the file commit.template in this directory as a template when writing
+commit messages. Make sure that your commit message contains all the necessary
+parts, i.e. the component name, a short description, the ticket number and
+a long description. Below is an example commit message for a defect ticket:
+
+-----<-----<-----<-----<-----<-----
+base: Use default scheduling policy when configured policy is invalid [#690]
+
+OpenSAF would fail to start when an invalid thread scheduling policy has been
+configured, e.g. using the following configuration options for one of the
+OpenSAF services:
+
+export OSAF_MDS_SCHED_PRIORITY=0
+export OSAF_MDS_SCHED_POLICY=3
+
+The OpenSAF services fail with the following messages:
+
+Dec 24 14:40:02 SLES_NEW2 opensafd[15010]: ER Timed-out for response from RDE
+Dec 24 14:40:02 SLES_NEW2 opensafd[15010]: ER
+Dec 24 14:40:02 SLES_NEW2 opensafd[15010]: ER Going for recovery
+Dec 24 14:40:02 SLES_NEW2 opensafd[15010]: ER Trying To RESPAWN /usr/lib64/opensaf/clc-cli/osaf-rded attempt #1
+Dec 24 14:40:02 SLES_NEW2 opensafd[15010]: ER Sending SIGKILL to RDE, pid=15031
+
+The reason is that scheduling policy 3 (SCHED_BATCH) is not a valid parameter to
+the pthread_attr_setschedpolicy() function, and OpenSAF passes the configured
+policy to this function without whecking that it is valid.
+
+A check for this case has been added, so that we fall back to the default
+scheduling policy when an invalid policy has been configured.
+-----<-----<-----<-----<-----<-----
+
+Default Commit Message Template
+===============================
+
+Enter the following set of commands to set up the commit.template as the default
+commit message in Mercurial (you need to log out and log in again for the change
+to take effect):
+
+mkdir ~/bin
+cp hgeditor.sh ~/bin
+chmod 755 ~/bin/hgeditor.sh
+echo "export HGEDITOR=~/bin/hgeditor.sh" >> ~/.bashrc
+echo "setenv HGEDITOR ~/bin/hgeditor.sh" >> ~/.cshrc
+
+Mercurial Settings Needed for Email Review
+==========================================
+
+This section lists the settings that should be enabled from the '~/.hgrc' file to
+be able to use the helper script properly.
+
+The following options should be set in ~/.hgrc:
+
+-----<-----<-----<-----<-----<-----
+[ui]
+username = John Doe <john.doe@example.com>
+
+[extensions]
+hgext.mq =
+hgext.patchbomb =
+
+[email]
+method = smtp
+from = John Doe <john.doe@example.com>
+
+[smtp]
+host = smtp.example.com
+
+[diff]
+git=1
+nodates=1
+showfunc=1
+-----<-----<-----<-----<-----<-----
+
+git-like diff should preferred to hg-like diff. There's known issues
+interpreting hg-like diff formatted patch with new file mode and deleted file
+mode.
+
+nodates and showfunc gives cleaner patch context.
+
+
+Using the submit-review.sh Helper Script
+========================================
+
+Present in './tools/devel/review/submit-review.sh', this script will help developer to
+easily submit work for review in well formatted patch series as seen on major
+open source project mailing lists.
+
+For now, the script supports two workflows:
+
+   * Submit review based on a range of locally committed changesets
+   * Submit review based on a patch queue (MQ)
+   * Submit review based on all outgoing changesets
+
+If you need help using the Mercurial patch queue extension, take a look at the
+other document '00-README-hgtips' present in the current directory.
+
+The script will help you create the following work package:
+
+   1. Put the revlevant files for the review in a temp directory
+   2. Generate a review template for the [PATCH 0/x]
+   3. Open the generated template in the user's $EDITOR of choice
+      and allow him to add the necessary comments
+   4. Prompt the user for a review subject
+   5. Prompt the user to enter emails of the peer reviewers, the devel
+      list is added on CC automatically
+
+The script currently accepts the following options:
+
+Usage: submit-review.sh [-t] [-q|-r rev] [-d dest]
+
+-t    Executes a dry-run (nothing will be emailed)
+-q    Enables patch queue usage for the review process
+-r    Uses the csX:csY committed revision range for the review process
+      (default 'tip')
+-d    Specifies where the review package gets dumped (default 'mktemp -d')
+
+Using submit-review.sh with patch queue:
+
+   % submit-review.sh -q
+
+Using submit-review.sh with local changesets:
+
+   % submit-review.sh -r csX:csY
+
+
+Sending Patch for Review Manually
+=================================
+
+Nothing forces the developer to send patches for review using the helper script.
+However some minor rules should be followed to try keeping the review process
+uniform.
+
+1. The diff format should be the same for everyone (~/.hgrc) :
+
+   -----<-----<-----<-----<-----<-----
+   [diff]
+   git=1
+   nodates=1
+   showfunc=1
+   -----<-----<-----<-----<-----<-----
+
+2. The patch series should be sent inlined, one per email with an introduction
+   email (e.g. [PATCH 0/x] Review Request for ...)
+
+   No attachment!!!
+
+   The reason to keep patch inlined is simple, comments for the review can be
+   added in the reply, and attachment is a pain for review using text email
+   client. Also properly inlined patches can be dropped as mbox files to use with
+   Mercurial.
+
+      a. Using the 'hg email' command, patch will be exported with the proper
+         format, given that the proper settings for [diff] are set.
+      b. If not using the 'hg email' command, or to export a single patch, use
+         the 'hg export' command. Preferably export one changeset per patch if
+         the changes are meant for different modules/areas.
+
+3. Add the desired reviewers (if any) on the TO: line and the developer mailing
+   list on the CC: line. It's probably better to have the developer on the TO:
+   line and catch his email filter, most developer are subscribed to dozens of
+   development mailing lists...
+

@@ -1,0 +1,579 @@
+#! /bin/sh
+#
+# (C) Copyright 2009 The OpenSAF Foundation
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+# or FITNESS FOR A PARTICULAR PURPOSE. This file and program are licensed
+# under the GNU Lesser General Public License Version 2.1, February 1999.
+# The complete license can be accessed from the following location:
+# http://opensource.org/licenses/lgpl-license.php
+# See the Copying file included with the OpenSAF distribution for full
+# licensing terms.
+#
+# Author(s): Ericsson
+#
+
+usage()
+{
+	echo ""
+	echo "usage: `basename $0` [<class name> [state name] [DN]]"
+	echo ""
+	echo "	Without any arguments AMF entities with questionable health is displayed."
+	echo "	class names: app|comp|csiass|node|sg|si|siass|su"
+	echo "	state names: adm|all|ass|ha|har|oper|pres|readi"
+	echo
+}
+
+amf_state()
+{
+	echo
+	echo "Service Instances UNLOCKED and UNASSIGNED:"
+	si_dns=`immfind -c SaAmfSI`
+	for si_dn in $si_dns; do
+		adm_state_val=`immlist -a "saAmfSIAdminState" $si_dn | cut -d = -f2`
+		ass_state_val=`immlist -a "saAmfSIAssignmentState" $si_dn | cut -d = -f2`
+
+		if [ $adm_state_val -eq 1 ] && [ $ass_state_val -eq 1 ]; then
+			echo "   $si_dn"
+		fi
+
+	done
+
+	echo
+	echo "Service Units UNLOCKED and DISABLED:"
+	su_dns=`immfind -c SaAmfSU`
+	for su_dn in $su_dns; do
+		adm_state_val=`immlist -a "saAmfSUAdminState" $su_dn | cut -d = -f2`
+		oper_state_val=`immlist -a "saAmfSUOperState" $su_dn | cut -d = -f2`
+
+		if [ $adm_state_val -eq 1 ] && [ $oper_state_val -eq 2 ]; then
+			echo "   $su_dn"
+		fi
+	done
+
+	echo
+	echo "Nodes UNLOCKED and DISABLED:"
+	node_dns=`immfind -c SaAmfNode`
+	for node_dn in $node_dns; do
+		adm_state_val=`immlist -a "saAmfNodeAdminState" $node_dn | cut -d = -f2`
+		oper_state_val=`immlist -a "saAmfNodeOperState" $node_dn | cut -d = -f2`
+
+		if [ $adm_state_val -eq 1 ] && [ $oper_state_val -eq 2 ]; then
+			echo "   $node_dn"
+		fi
+	done
+
+	echo
+}
+
+if [ $# -eq 0 ]; then
+	amf_state
+	exit 0
+elif [ $# -eq 1 ]; then
+	CLASS=$1
+	STATE=all
+	DN=all
+elif [ $# -eq 2 ]; then
+	CLASS=$1
+	STATE=$2
+	DN=all
+elif [ $# -eq 3 ]; then
+	CLASS=$1
+	STATE=$2
+	DN=$3
+else
+	usage
+	exit 1
+fi
+
+adm_state()
+{
+	adm_state_val=`immlist -a $1 $2 | cut -d = -f2`
+
+	if [ -z "$adm_state_val" ]; then
+		exit 1
+	fi
+
+	echo -n "	$1="
+	if [ "$adm_state_val" = "<Empty>" ]; then
+		echo $adm_state_val
+	elif [ $adm_state_val -eq 1 ]; then
+		echo "UNLOCKED(1)"
+	elif [ $adm_state_val -eq 2 ]; then
+		echo "LOCKED(2)"
+	elif [ $adm_state_val -eq 3 ]; then
+		echo "LOCKED-INSTANTIATION(3)"
+	elif [ $adm_state_val -eq 4 ]; then
+		echo "SHUTTING-DOWN(4)"
+	else
+		echo "UNKNOWN($adm_state_val)"
+	fi
+}
+
+ass_state()
+{
+	ass_state_val=`immlist -a $1 $2 | cut -d = -f2`
+
+	if [ -z "$ass_state_val" ]; then
+		exit 1
+	fi
+
+	echo -n "	$1="
+	if [ "$ass_state_val" = "<Empty>" ]; then
+		echo $ass_state_val
+	elif [ $ass_state_val -eq 1 ]; then
+		echo "UNASSIGNED(1)"
+	elif [ $ass_state_val -eq 2 ]; then
+		echo "FULLY_ASSIGNED(2)"
+	elif [ $ass_state_val -eq 3 ]; then
+		echo "PARTIALLY_ASSIGNED(3)"
+	else
+		echo "UNKNOWN($ass_state_val)"
+	fi
+}
+
+ha_state()
+{
+	ha_state_val=`immlist -a $1 $2 | cut -d = -f2`
+
+	if [ -z "$ha_state_val" ]; then
+		exit 1
+	fi
+
+	echo -n "	$1="
+	if [ "$ha_state_val" = "<Empty>" ]; then
+		echo $ha_state_val
+	elif [ $ha_state_val -eq 1 ]; then
+		echo "ACTIVE(1)"
+	elif [ $ha_state_val -eq 2 ]; then
+		echo "STANDBY(2)"
+	elif [ $ha_state_val -eq 3 ]; then
+		echo "QUIESCED(3)"
+	elif [ $ha_state_val -eq 4 ]; then
+		echo "QUIESCING(4)"
+	else
+		echo "UNKNOWN($ha_state_val)"
+	fi
+}
+
+ha_readiness_state()
+{
+	ha_readiness_state_val=`immlist -a $1 $2 | cut -d = -f2`
+
+	if [ -z "$ha_readiness_state_val" ]; then
+		exit 1
+	fi
+
+	echo -n "	$1="
+	if [ "$ha_readiness_state_val" = "<Empty>" ]; then
+		echo $ha_readiness_state_val
+	elif [ $ha_readiness_state_val -eq 1 ]; then
+		echo "READY_FOR_ASSIGNMENT(1)"
+	elif [ $ha_readiness_state_val -eq 2 ]; then
+		echo "READY_FOR_ACTIVE_DEGRADED(2)"
+	elif [ $ha_readiness_state_val -eq 3 ]; then
+		echo "NOT_READY_FOR_ACTIVE(3)"
+	elif [ $ha_readiness_state_val -eq 4 ]; then
+		echo "NOT_READY_FOR_ASSIGNMENT(4)"
+	else
+		echo "UNKNOWN($ha_readiness_state_val)"
+	fi
+}
+
+pres_state()
+{
+	pres_state_val=`immlist -a $1 $2 | cut -d = -f2`
+
+	if [ -z "$pres_state_val" ]; then
+		exit 1
+	fi
+
+	echo -n "	$1="
+	if [ "$pres_state_val" = "<Empty>" ]; then
+		echo $pres_state_val
+	elif [ $pres_state_val -eq 1 ]; then
+		echo "UNINSTANTIATED(1)"
+	elif [ $pres_state_val -eq 2 ]; then
+		echo "INSTANTIATING(2)"
+	elif [ $pres_state_val -eq 3 ]; then
+		echo "INSTANTIATED(3)"
+	elif [ $pres_state_val -eq 4 ]; then
+		echo "TERMINATING(4)"
+	elif [ $pres_state_val -eq 5 ]; then
+		echo "RESTARTING(5)"
+	elif [ $pres_state_val -eq 6 ]; then
+		echo "INSTANTIATION-FAILED(6)"
+	elif [ $pres_state_val -eq 7 ]; then
+		echo "TERMINATION-FAILED(7)"
+	else
+		echo "UNKNOWN($pres_state_val)"
+	fi
+}
+
+oper_state()
+{
+	oper_state_val=`immlist -a $1 $2 | cut -d = -f2`
+
+	if [ -z "$oper_state_val" ]; then
+		exit 1
+	fi
+
+	echo -n "	$1="
+	if [ "$oper_state_val" = "<Empty>" ]; then
+		echo $oper_state_val
+	elif [ $oper_state_val -eq 1 ]; then
+		echo "ENABLED(1)"
+	elif [ $oper_state_val -eq 2 ]; then
+		echo "DISABLED(2)"
+	else
+		echo "UNKNOWN($oper_state_val)"
+	fi
+}
+
+readiness_state()
+{
+	readiness_state_val=`immlist -a $1 $2 | cut -d = -f2`
+
+	if [ -z "$readiness_state_val" ]; then
+		exit 1
+	fi
+
+	echo -n "	$1="
+	if [ "$readiness_state_val" = "<Empty>" ]; then
+		echo $readiness_state_val
+	elif [ $readiness_state_val -eq 1 ]; then
+		echo "OUT-OF-SERVICE(1)"
+	elif [ $readiness_state_val -eq 2 ]; then
+		echo "IN-SERVICE(2)"
+	elif [ $readiness_state_val -eq 3 ]; then
+		echo "STOPPING(3)"
+	else
+		echo "UNKNOWN($readiness_state_val)"
+	fi
+}
+
+app_state()
+{
+	app_dn=""
+	app_dns=""
+	app_state=""
+	app_states=""
+
+	if [ "$1" = "adm" ]; then
+		app_states="saAmfApplicationAdminState"
+	elif [ "$1" = "all" ]; then
+		app_states="saAmfApplicationAdminState"
+	else
+		echo "error - state '$1' not supported for app"
+		exit 1
+	fi
+
+	if [ "$2" = "all" ]; then
+		app_dns=`immfind -c SaAmfApplication`
+	else
+		app_dns=$2
+	fi
+
+	for app_dn in $app_dns; do
+		echo "$app_dn"
+		for app_state in $app_states; do
+			if [ "$app_state" = "saAmfApplicationAdminState" ]; then
+				adm_state $app_state $app_dn
+			fi
+		done
+	done
+}
+
+comp_state()
+{
+	comp_dn=""
+	comp_dns=""
+	comp_state=""
+	comp_states=""
+
+	if [ "$1" = "oper" ]; then
+		comp_states="saAmfCompOperState"
+	elif [ "$1" = "pres" ]; then
+		comp_states="saAmfCompPresenceState"
+	elif [ "$1" = "readi" ]; then
+		comp_states="saAmfCompReadinessState"
+	elif [ "$1" = "all" ]; then
+		comp_states="saAmfCompOperState saAmfCompPresenceState saAmfCompReadinessState"
+	else
+		echo "error - state '$1' not supported for comp"
+		exit 1
+	fi
+
+	if [ "$2" = "all" ]; then
+		comp_dns=`immfind -c SaAmfComp`
+	else
+		comp_dns=$2
+	fi
+
+	for comp_dn in $comp_dns; do
+		echo "$comp_dn"
+		for comp_state in $comp_states; do
+			if [ "$comp_state" = "saAmfCompOperState" ]; then
+				oper_state $comp_state $comp_dn
+			elif [ "$comp_state" = "saAmfCompPresenceState" ]; then
+				pres_state $comp_state $comp_dn
+			elif [ "$comp_state" = "saAmfCompReadinessState" ]; then
+				readiness_state $comp_state $comp_dn
+			fi
+		done
+	done
+}
+
+csiass_state()
+{
+	csiass_dn=""
+	csiass_dns=""
+	csiass_state=""
+	csiass_states=""
+
+	if [ "$1" = "ha" ]; then
+		csiass_states="saAmfCSICompHAState"
+	elif [ "$1" = "har" ]; then
+		csiass_states="saAmfCSICompHAReadinessState"
+	elif [ "$1" = "all" ]; then
+		csiass_states="saAmfCSICompHAState saAmfCSICompHAReadinessState"
+	else
+		echo "error - state '$1' not supported for csiass"
+		exit 1
+	fi
+
+	if [ "$2" = "all" ]; then
+		csiass_dns=`immfind -c SaAmfCSIAssignment`
+	else
+		csiass_dns=$2
+	fi
+
+	for csiass_dn in $csiass_dns; do
+		echo "$csiass_dn"
+		for csiass_state in $csiass_states; do
+			if [ "$csiass_state" = "saAmfCSICompHAState" ]; then
+				ha_state $csiass_state $csiass_dn
+			elif [ "$csiass_state" = "saAmfCSICompHAReadinessState" ]; then
+				ha_readiness_state $csiass_state $csiass_dn
+			fi
+		done
+	done
+}
+
+node_state()
+{
+	node_dn=""
+	node_dns=""
+	node_state=""
+	node_states=""
+
+	if [ "$1" = "oper" ]; then
+		node_states="saAmfNodeOperState"
+	elif [ "$1" = "adm" ]; then
+		node_states="saAmfNodeAdminState"
+	elif [ "$1" = "all" ]; then
+		node_states="saAmfNodeAdminState saAmfNodeOperState"
+	else
+		echo "error - state '$1' not supported for node"
+		exit 1
+	fi
+
+	if [ "$2" = "all" ]; then
+		node_dns=`immfind -c SaAmfNode`
+	else
+		node_dns=$2
+	fi
+
+	for node_dn in $node_dns; do
+		echo "$node_dn"
+		for node_state in $node_states; do
+			if [ "$node_state" = "saAmfNodeAdminState" ]; then
+				adm_state $node_state $node_dn
+			elif [ "$node_state" = "saAmfNodeOperState" ]; then
+				oper_state $node_state $node_dn
+			fi
+		done
+	done
+}
+
+sg_state()
+{
+	dn=""
+	dns=""
+	state=""
+	states=""
+
+	if [ "$1" = "adm" ]; then
+		sg_states="saAmfSGAdminState"
+	elif [ "$1" = "all" ]; then
+		sg_states="saAmfSGAdminState"
+	else
+		echo "error - state '$1' not supported for sg"
+		exit 1
+	fi
+
+	if [ "$2" = "all" ]; then
+		sg_dns=`immfind -c SaAmfSG`
+	else
+		sg_dns=$2
+	fi
+
+	for sg_dn in $sg_dns; do
+		echo "$sg_dn"
+		for sg_state in $sg_states; do
+			if [ "$sg_state" = "saAmfSGAdminState" ]; then
+				adm_state $sg_state $sg_dn
+			fi
+		done
+	done
+}
+
+si_state()
+{
+	si_dn=""
+	si_dns=""
+	si_state=""
+	si_states=""
+
+	if [ "$1" = "adm" ]; then
+		si_states="saAmfSIAdminState"
+	elif [ "$1" = "ass" ]; then
+		si_states="saAmfSIAssignmentState"
+	elif [ "$1" = "all" ]; then
+		si_states="saAmfSIAdminState saAmfSIAssignmentState"
+	else
+		echo "error - state '$1' not supported for si"
+		exit 1
+	fi
+
+	if [ "$2" = "all" ]; then
+		si_dns=`immfind -c SaAmfSI`
+	else
+		si_dns=$2
+	fi
+
+	for si_dn in $si_dns; do
+		echo "$si_dn"
+		for si_state in $si_states; do
+			if [ "$si_state" = "saAmfSIAdminState" ]; then
+				adm_state $si_state $si_dn
+			fi
+			if [ "$si_state" = "saAmfSIAssignmentState" ]; then
+				ass_state $si_state $si_dn
+			fi
+		done
+	done
+}
+
+siass_state()
+{
+	siass_dn=""
+	siass_dns=""
+	siass_state=""
+	siass_states=""
+
+	if [ "$1" = "ha" ]; then
+		siass_states="saAmfSISUHAState"
+	elif [ "$1" = "har" ]; then
+		siass_states="saAmfSISUHAReadinessState"
+	elif [ "$1" = "all" ]; then
+		siass_states="saAmfSISUHAState saAmfSISUHAReadinessState"
+	else
+		echo "error - state '$1' not supported for siass"
+		exit 1
+	fi
+
+	if [ "$2" = "all" ]; then
+		siass_dns=`immfind -c SaAmfSIAssignment`
+	else
+		siass_dns=$2
+	fi
+
+	for siass_dn in $siass_dns; do
+		echo "$siass_dn"
+		for siass_state in $siass_states; do
+			if [ "$siass_state" = "saAmfSISUHAState" ]; then
+				ha_state $siass_state $siass_dn
+			elif [ "$siass_state" = "saAmfSISUHAReadinessState" ]; then
+				ha_readiness_state $siass_state $siass_dn
+			fi
+		done
+	done
+}
+
+su_state()
+{
+	su_dn=""
+	su_dns=""
+	su_state=""
+	su_states=""
+
+	if [ "$1" = "oper" ]; then
+		su_states="saAmfSUOperState"
+	elif [ "$1" = "pres" ]; then
+		su_states="saAmfSUPresenceState"
+	elif [ "$1" = "readi" ]; then
+		su_states="saAmfSUReadinessState"
+	elif [ "$1" = "adm" ]; then
+		su_states="saAmfSUAdminState"
+	elif [ "$1" = "all" ]; then
+		su_states="saAmfSUAdminState saAmfSUOperState saAmfSUPresenceState saAmfSUReadinessState"
+	else
+		echo "error - state '$1' not supported for su"
+		exit 1
+	fi
+
+	if [ "$2" = "all" ]; then
+		su_dns=`immfind -c SaAmfSU`
+	else
+		su_dns=$2
+	fi
+
+	for su_dn in $su_dns; do
+		echo "$su_dn"
+		for su_state in $su_states; do
+			if [ "$su_state" = "saAmfSUAdminState" ]; then
+				adm_state $su_state $su_dn
+			elif [ "$su_state" = "saAmfSUOperState" ]; then
+				oper_state $su_state $su_dn
+			elif [ "$su_state" = "saAmfSUPresenceState" ]; then
+				pres_state $su_state $su_dn
+			elif [ "$su_state" = "saAmfSUReadinessState" ]; then
+				readiness_state $su_state $su_dn
+			fi
+		done
+	done
+}
+
+case "$CLASS" in
+	app)
+		app_state $STATE $DN
+		;;
+	csiass)
+		csiass_state $STATE $DN
+		;;
+	comp)
+		comp_state $STATE $DN
+		;;
+	node)
+		node_state $STATE $DN
+		;;
+	sg)
+		sg_state $STATE $DN
+		;;
+	si)
+		si_state $STATE $DN
+		;;
+	siass)
+		siass_state $STATE $DN
+		;;
+	su)
+		su_state $STATE $DN
+		;;
+	*)
+		usage
+		exit 1
+esac
+exit 0
+
